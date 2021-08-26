@@ -1,0 +1,286 @@
+Apache Hive
+
+Softwares de front-end, auxilia acesso a dados,  p/ p/ leitura e gravação, gerenciamento de gde qde dados, hdfs, drive jdbc.
+
+Software construído 
+sobre o Apache Hadoop
+Desenvolvido em 2007 pelo Facebook
+A partir de 2008 Projeto Open Source
+
+Usa linguagem HQL (semelhante ao SQL) = Hive query language
+
+-3 engines: map reduce, spark, tez
+
+
+---
+
+metastore:
+um bd com tabelas q armazena inforamaçoes de schema q hive e impala utilizam, com relacionamento entre tabelas, p armazenar o metastore.
+
+Modelo de dados:
+Armazena com filesystem. os arquivos ficam dentro de uma pasta. 
+
+Database:
+diversas formas...
+
+Particionamento:
+Ajuda a performance e distribuição de leitura no cluster
+-e uma pasta, um diretorio no hdfs.
+-como uma coluna
+-
+
+
+----
+hadoop -h
+man hadoop
+hdfs -h
+man hdfs
+
+-----
+
+
+sudo -u hdfs hadoop dfsadmin -safemode leave
+hive
+hive>
+
+# bd criados no hive:
+show databases;
+
+# criando db:
+create database teste01;
+
+# boa prática:
+create database if not exists teste01;
+
+# criando tabela no bd teste01:
+create table teste01.teste01 (id ind);
+
+# outra forma de criar tabela:
+use teste01;
+crete table teste02 (id int);
+
+# visualizando as tabelas:
+show tables;
+
+#printar o header:
+set hive.cli.print.header=true;
+
+# printar o bd:
+select * from teste01;
+
+#printar o bd corrente:
+set hive.cli.print.current.db=true;
+
+#especifica o bd a utilizar:
+use test;
+
+#verificando o nome da coluna e tipo
+desc teste01;
+
+#inserindo um dado na tabela
+insert into table teste01 values(1);
+insert into table teste01 values(2);
+
+#verificando a tabela:
+select * from teste01;
+
+# lista bd e tabelas:
+hdfs dfs -ls /user/hive/warehouse
+#.db sao db demais sao arquivos
+
+# verifica a db
+hdfs dfs -ls /user/hive/warehouse/teste01.db
+# verifica as tabelas:
+hdfs dfs -ls /user/hive/warehouse/teste01.db/teste01
+hdfs dfs -ls /user/hive/warehouse/teste01.db/teste02
+
+#como ficam armazenados:
+show create table teste01
+
+# criação da tabela, 
+create external table teste03 (id int);
+#inserindo:
+insert into table teste03 values(100);
+
+--
+
+ls -ltrh
+
+#verifica arquivo e header com nome das colunas:
+cat employee.txt
+
+#carregando uma tabela:
+CREATE EXTERNAL TABLE TB_EXT_EMPLOYEE(
+id STRING,
+groups STRING,
+age STRING,
+active_lifestyle STRING,
+salary STRING)
+ROW FORMAT DELIMITED FIELDS
+TERMINETED BY '\;'
+STORED AS TEXTFILE
+LOCATION '/user/hive/warehouse/external/tabelas/employee'
+tblproperties ("skip.header.line.count"="1");
+
+show dreate table TB_EXT_EMPLOYEE;
+
+#verificar se o diretorio existe no hdfs
+hdfs dfs -ls /user/hive/warehouse/external/tableas/employee
+# aparece vazio pois nao colocamos o arquivo
+
+#carregando o arquivo p/ local
+hdfs dfs -put /home/everis/employee.txt /user/hive/warehouse/external/tabelas/employee
+
+#verifica as tabelas
+show tables;
+
+# faz a contagem p verificar se a tabela foi populada:
+select count(*) from tb ext employee;
+
+# visualiza a tabela:
+select * from tb_ext_employee
+
+# o tratamento pode ser feito antes por injeção shell script ou no hive por query vc trata os campos, types, etc.
+
+#describe:
+desc tb_ext_employee;
+
+#mudando o formato de texto para parquet:
+CREATE EXTERNAL TABLE TB_EMPLOYEE(
+id INT,
+groups STRING,
+age INT,
+active_lifestyle STRING,
+salary DOUBLE)
+PARTITIONED BY (dt_processamento STRING)
+ROW FORMAT DELIMITED FIELDS TERMINATED BY '|'
+STORED AS PARQUET TBLPROPERTIES ("parquet.compression"="SNAPPY");
+
+#Inserindo dados em parquet
+
+#20201118 (conteúdo da partição, cria um diretório com o conteudo 20201118)
+#inserindo particionamento:
+insert into table TB_EMPLOYEE partition (dt_processamento='20201118')
+select
+id,
+groups,
+age,
+active_lifestyle,
+salary
+from TB_EXT_EMPLOYEE
+
+hdfs dfs -ls /user/hive/warehouse/
+hdfs dfs -ls /user/hive/warehouse/teste01.db/
+hdfs dfs -ls /user/hive/warehouse/teste01.db/tb_employee
+hdfs dfs -ls /user/hive/warehouse/teste01.db/tb_employee/dt_processamento=20201118
+
+#não da pra fazer cat do arquivo parquet
+#ferramenta para leitura é parquet-tools
+#copiar arquivo:
+hdfs dfs -copyToLocal /user/hive/warehouse/teste01.db/tb_employee/dt_processamento=20201118/00000_0
+#executando:
+parquet-tools schema 00000_0
+
+-----
+
+#relacionando tabelas com JOIN
+
+#base free localização
+cat base_localidade.csv
+
+# criando a tabela
+hive (teste01> 
+create external table localidade(
+street string,
+city string,
+zip string,
+state string,
+beds string,
+baths string,
+sq_ft string,
+type string,
+sale_date string,
+longitude string)
+PARTITIONED BY (particao STRING)
+ROW FORMAT DELIMITED FIELDS TERMINATED BY ","
+STORED AS TEXTFILE
+location '/user/warehouse/external/tabelas/localidade'
+tblproperties ("skip.header.line.count"="1");
+
+#fazendo carga da tabela:
+hive (teste01)>
+load data local inpath '/home/everis/base_localidade.csv'
+into table teste01.localidade partition (particao='2021-01-21);
+
+# verificando a carga:
+select count(*) from localidade;
+select * from localidade
+
+#verificando o hdfs:
+hdfs dfs -ls /user/hive/warehouse/external/tabelas/localidade
+hdfs dfs -ls /user/hive/warehouse/external/tabelas/localidade/particao=2021-01-21
+hdfs dfs -cat /user/hive/warehouse/external/tabelas/localidade/particao=2021-01-21/base_localidade.txt
+
+#criando uma tabela parquet
+create table tb_localidade_parquet(
+street string,
+city string,
+zip string,
+state string,
+beds string,
+baths string,
+sq_ft string,
+type string,
+sale_date string,
+longitude string)
+PARTITIONED BY (PARTICAO STRING)
+STORED AS PARQUET;
+
+# Fazendo a ingestão:
+INSERT into TABLE tb_localidade_parquet
+PARTITION(PARTICAO='01')
+SELECT
+street,
+city,
+zip,
+state,
+beds,
+baths,
+sq_ft,
+type,
+sale_date,
+longitude
+FROM localidade;
+
+# verifica os dados:
+select * from tb_localidade_parquet;
+
+#verificando relacionamentos entre tabelas:
+desc tb_ext_employee;
+
+select
+tab01.id,
+tab02.zip
+from tb_ext_employee tab01
+full outer join tb_localidade_parquet tab02
+on tab01.id = tab02.zip;
+
+# criando uma tabela nova a partir da junção:
+select
+tab01.id,
+tab02.zip,
+"teste" col_fixa,
+concat(tab01.id,tab02.zip) as col_concatenada
+from tb_ext_employee tab01
+full outer join tb_localidade_parquet tab02
+on tab01.id = tab02.zip;
+
+
+
+#joga comando para o linux dentro do hive:
+!clear
+!ls -ltrh;
+
+
+#Acessando o hive externamente:
+hive -S -e "select count(*) from teste01.localidade;"
